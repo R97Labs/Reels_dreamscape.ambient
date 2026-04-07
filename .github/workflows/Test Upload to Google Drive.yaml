@@ -1,33 +1,28 @@
-name: Test Upload to Google Drive
+name: Upload to Google Drive
 
 on:
-  workflow_dispatch:
+  push:
+    branches:
+      - main
 
 jobs:
-  upload-to-gdrive:
+  upload:
     runs-on: ubuntu-latest
 
     steps:
-      - name: Checkout repository
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Set up rclone
-        run: |
-          curl https://rclone.org/install.sh | sudo bash
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.12'
 
-      - name: Create service account file
-        run: |
-          echo "${{ secrets.GDRIVE_SERVICE_ACCOUNT }}" > /tmp/sa.json
+      - name: Install dependencies
+        run: pip install pydrive2
 
-      - name: Create rclone config
-        run: |
-          mkdir -p ~/.config/rclone
-          echo "[drive]" > ~/.config/rclone/rclone.conf
-          echo "type = drive" >> ~/.config/rclone/rclone.conf
-          echo "scope = drive" >> ~/.config/rclone/rclone.conf
-          echo "service_account_file = /tmp/sa.json" >> ~/.config/rclone/rclone.conf
-          echo "root_folder_id = 1EVIHk24_3C7DsCLcYoQOdrM_T11UrkWH" >> ~/.config/rclone/rclone.conf
+      - name: Save service account
+        run: echo "${{ secrets.GDRIVE_SERVICE_ACCOUNT }}" > service_account.json
 
-      - name: Upload file to Google Drive
-        run: |
-          rclone copy ./spotify.png drive: -P
+      - name: Upload to Drive
+        run: python upload_to_gdrive.py
