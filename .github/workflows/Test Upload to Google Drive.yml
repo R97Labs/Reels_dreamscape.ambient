@@ -1,24 +1,37 @@
-name: Render Reels & Upload to Google Drive
+name: Test Upload spotify.png to Google Drive
 
 on:
   workflow_dispatch:
 
 jobs:
-  render:
+  test-upload:
     runs-on: ubuntu-latest
     steps:
       # Step 1: Checkout repo
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      # Step 2: Install ffmpeg and rclone
-      - name: Install ffmpeg and rclone
+      # Step 2: Install rclone
+      - name: Install rclone
         run: |
           sudo apt update
-          sudo apt install -y ffmpeg unzip curl
+          sudo apt install -y curl
           curl https://rclone.org/install.sh | sudo bash
 
-      # Step 3: Setup rclone with service account
+      # Step 3: Check if spotify.png exists
+      - name: Check if spotify.png exists
+        run: |
+          if [ -f spotify.png ]; then
+            echo "✅ spotify.png found"
+            ls -lh spotify.png
+          else
+            echo "❌ spotify.png NOT found in repo root"
+            echo "Files in current directory:"
+            ls -la
+            exit 1
+          fi
+
+      # Step 4: Setup rclone with service account
       - name: Setup rclone
         env:
           GDRIVE_SERVICE_ACCOUNT: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
@@ -26,59 +39,33 @@ jobs:
           mkdir -p ~/.config/rclone
           echo "$GDRIVE_SERVICE_ACCOUNT" > ~/service_account.json
           
-          # Verify service account file was created
+          # Verify file was created
           if [ ! -s ~/service_account.json ]; then
-            echo "ERROR: Service account file is empty!"
+            echo "❌ Service account file is empty!"
             exit 1
           fi
+          echo "✅ Service account file created"
           
-          # Create rclone config with proper formatting
-          cat > ~/.config/rclone/rclone.conf << 'RCLONE_EOF'
+          # Create rclone config
+          cat > ~/.config/rclone/rclone.conf << 'EOF'
           [gdrive]
           type = drive
           scope = drive.file
           service_account_file = /home/runner/service_account.json
-          RCLONE_EOF
+          EOF
           
-          # Test rclone config
+          echo "✅ Rclone configured"
           rclone version
-          rclone listremotes
 
-      # Step 4: Prepare paths and clean old outputs
-      - name: Prepare paths
+      # Step 5: Upload spotify.png to Google Drive
+      - name: Upload spotify.png to Google Drive
         run: |
-          mkdir -p output tmp
-          rm -rf output/* tmp/*
-
-      # Step 5: Run your reel generation script
-      - name: Run script
-        run: |
-          if [ ! -f script.sh ]; then
-            echo "ERROR: script.sh not found!"
-            exit 1
-          fi
-          chmod +x script.sh
-          ./script.sh
-
-      # Step 6: Check output files
-      - name: Check output files
-        run: |
-          echo "=== Files in output directory ==="
-          ls -lh output/ || echo "❌ No output files found"
-          du -sh output/ || true
-
-      # Step 7: Upload output as temporary GitHub artifact
-      - name: Upload output artifact (1 day retention)
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: final-video
-          path: output/
-          retention-days: 1
-
-      # Step 8: Upload to Google Drive
-      - name: Upload to Google Drive
-        run: |
-          echo "Uploading to Google Drive folder..."
-          rclone copy output/ gdrive:1EVIHk24_3C7DsCLcYoQOdrM_T11UrkWH/ -v --stats 1s
+          echo "Starting upload..."
+          rclone copy spotify.png gdrive:1EVIHk24_3C7DsCLcYoQOdrM_T11UrkWH/ -v --stats 1s
           echo "✅ Upload complete!"
+
+      # Step 6: Verify upload
+      - name: Verify upload
+        run: |
+          echo "Files in Google Drive folder:"
+          rclone ls gdrive:1EVIHk24_3C7DsCLcYoQOdrM_T11UrkWH/ -v
