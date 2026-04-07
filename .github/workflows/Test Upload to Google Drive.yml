@@ -1,43 +1,27 @@
-name: Upload to Google Drive
+name: Test Rclone Upload
 
 on:
-  workflow_dispatch:
+  workflow_dispatch:  # allows manual trigger
 
 jobs:
-  upload:
+  rclone-upload:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
+      - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: "3.12"
+      - name: Install rclone
+        run: |
+          curl https://rclone.org/install.sh | sudo bash
 
-      - name: Install dependencies
-        run: pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+      - name: Create service account JSON
+        run: |
+          echo "$GDRIVE_SERVICE_ACCOUNT" > /tmp/sa.json
 
-      - name: Write service account JSON
-        run: echo "$GDRIVE_SERVICE_ACCOUNT" > sa.json
-        shell: bash
+      - name: Test service account
+        run: |
+          rclone about drive: --drive-service-account-file /tmp/sa.json
 
       - name: Upload file to Drive
         run: |
-          python - <<EOF
-          from google.oauth2 import service_account
-          from googleapiclient.discovery import build
-
-          SCOPES = ['https://www.googleapis.com/auth/drive.file']
-          SERVICE_ACCOUNT_FILE = 'sa.json'
-
-          credentials = service_account.Credentials.from_service_account_file(
-              SERVICE_ACCOUNT_FILE, scopes=SCOPES)
-
-          service = build('drive', 'v3', credentials=credentials)
-
-          file_metadata = {'name': 'spotify.png'}
-          media = MediaFileUpload('spotify.png', mimetype='image/png')
-          file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
-          print(f"Uploaded file ID: {file.get('id')}")
-          EOF
+          rclone copy spotify.png drive:/ --drive-service-account-file /tmp/sa.json -P
