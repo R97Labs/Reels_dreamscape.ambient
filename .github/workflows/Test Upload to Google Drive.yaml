@@ -8,9 +8,15 @@ on:
 jobs:
   upload:
     runs-on: ubuntu-latest
+
     steps:
-      - name: Checkout repo
+      - name: Checkout repository
         uses: actions/checkout@v3
+
+      - name: Set up Python
+        uses: actions/setup-python@v4
+        with:
+          python-version: "3.12"
 
       - name: Install dependencies
         run: |
@@ -19,32 +25,29 @@ jobs:
 
       - name: Save Service Account JSON
         run: |
-          echo "${{ secrets.GDRIVE_SERVICE_ACCOUNT }}" > service_account.json
+          mkdir -p $HOME/.secrets
+          echo '${{ secrets.GDRIVE_SERVICE_ACCOUNT }}' > $HOME/.secrets/service_account.json
 
-      - name: Upload spotify.png
+      - name: Upload file to Google Drive
         run: |
           python - <<EOF
+          import os
           from google.oauth2 import service_account
           from googleapiclient.discovery import build
           from googleapiclient.http import MediaFileUpload
 
-          SERVICE_ACCOUNT_FILE = 'service_account.json'
-          SCOPES = ['https://www.googleapis.com/auth/drive.file']
+          SERVICE_ACCOUNT_FILE = os.path.expanduser("~/.secrets/service_account.json")
+          SCOPES = ["https://www.googleapis.com/auth/drive.file"]
 
-          credentials = service_account.Credentials.from_service_account_file(
+          creds = service_account.Credentials.from_service_account_file(
               SERVICE_ACCOUNT_FILE, scopes=SCOPES
           )
 
-          service = build('drive', 'v3', credentials=credentials)
+          drive_service = build('drive', 'v3', credentials=creds)
 
-          file_metadata = {'name': 'spotify.png'}
+          file_metadata = {'name': 'spotify.png'}  # File name in Drive
           media = MediaFileUpload('spotify.png', mimetype='image/png')
 
-          file = service.files().create(
-              body=file_metadata,
-              media_body=media,
-              fields='id'
-          ).execute()
-
-          print(f"✅ Uploaded file ID: {file.get('id')}")
+          file = drive_service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+          print("Uploaded File ID:", file.get('id'))
           EOF
