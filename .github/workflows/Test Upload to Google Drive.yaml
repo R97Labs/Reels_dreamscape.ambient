@@ -8,21 +8,38 @@ on:
 jobs:
   upload:
     runs-on: ubuntu-latest
-
     steps:
       - name: Checkout repo
         uses: actions/checkout@v3
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.12'
+      - name: Install Python and dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install pydrive2
 
-      - name: Install dependencies
-        run: pip install pydrive2
+      - name: Save Service Account JSON
+        run: |
+          mkdir -p $HOME/.secrets
+          printf "%s" "${{ secrets.GDRIVE_SERVICE_ACCOUNT }}" > $HOME/.secrets/service_account.json
 
-      - name: Save service account
-        run: echo "${{ secrets.GDRIVE_SERVICE_ACCOUNT }}" > service_account.json
+      - name: Upload spotify.png to Google Drive
+        env:
+          SERVICE_ACCOUNT_FILE: $HOME/.secrets/service_account.json
+        run: |
+          python - <<EOF
+          from pydrive2.auth import GoogleAuth
+          from pydrive2.drive import GoogleDrive
+          import os
 
-      - name: Upload to Drive
-        run: python upload_to_gdrive.py
+          SERVICE_ACCOUNT_FILE = os.environ["SERVICE_ACCOUNT_FILE"]
+
+          gauth = GoogleAuth()
+          gauth.LoadServiceConfigFile(SERVICE_ACCOUNT_FILE)  # service account JSON
+          gauth.ServiceAuth()
+          drive = GoogleDrive(gauth)
+
+          file = drive.CreateFile({'title': 'spotify.png'})
+          file.SetContentFile('spotify.png')
+          file.Upload()
+          print("✅ Uploaded successfully!")
+          EOF
