@@ -1,0 +1,64 @@
+name: Upload to Google Drive
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  upload-to-drive:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Save Service Account JSON
+        env:
+          SA_JSON: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
+        run: |
+          echo "$SA_JSON" > sa.json
+
+      - name: Install Python dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install --upgrade google-api-python-client google-auth-httplib2 google-auth-oauthlib
+
+      - name: Upload file to Google Drive
+        run: |
+          python - <<EOF
+          from google.oauth2 import service_account
+          from googleapiclient.discovery import build
+          from googleapiclient.http import MediaFileUpload
+
+          # Path to service account JSON
+          SERVICE_ACCOUNT_FILE = 'sa.json'
+
+          # Google Drive folder ID
+          FOLDER_ID = '1EVIHk24_3C7DsCLcYoQOdrM_T11UrkWH'
+
+          # File to upload
+          FILE_PATH = 'spotify.png'
+          FILE_NAME = 'spotify.png'
+
+          # Authenticate using the service account
+          credentials = service_account.Credentials.from_service_account_file(
+              SERVICE_ACCOUNT_FILE,
+              scopes=['https://www.googleapis.com/auth/drive']
+          )
+
+          # Build the Drive API client
+          service = build('drive', 'v3', credentials=credentials)
+
+          # File metadata
+          file_metadata = {
+              'name': FILE_NAME,
+              'parents': [FOLDER_ID]
+          }
+
+          # Upload the file
+          media = MediaFileUpload(FILE_PATH, resumable=True)
+          file = service.files().create(body=file_metadata, media_body=media, fields='id').execute()
+
+          print(f"Uploaded file with ID: {file.get('id')}")
+          EOF
