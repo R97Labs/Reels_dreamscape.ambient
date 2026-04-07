@@ -1,80 +1,84 @@
-name: Upload Spotify Image to Google Drive
+name: Render Reels & Upload to Google Drive
 
 on:
-  push:
-    paths:
-      - 'spotify.png'
-    branches:
-      - main  # Change this to your default branch if different
-  workflow_dispatch:  # Allows manual trigger
- 
+  workflow_dispatch:
+
 jobs:
-  upload-to-gdrive:
+  render:
     runs-on: ubuntu-latest
-    
     steps:
-      - name: Checkout repository
+      # Step 1: Checkout repo
+      - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Set up Python
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
-
-      - name: Install dependencies
+      # Step 2: Install ffmpeg and rclone
+      - name: Install ffmpeg and rclone
         run: |
-          pip install google-auth-oauthlib google-auth-httplib2 google-api-python-client
+          sudo apt update
+          sudo apt install -y ffmpeg unzip curl
+          curl https://rclone.org/install.sh | sudo bash
 
-      - name: Upload to Google Drive
+      # Step 3: Setup rclone with service account
+      - name: Setup rclone
         env:
-          GDRIVE_CREDENTIALS: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
-          GDRIVE_FOLDER_ID: ${{ secrets.GDRIVE_FOLDER_ID }}
+          GDRIVE_SERVICE_ACCOUNT: ${{ secrets.GDRIVE_SERVICE_ACCOUNT }}
         run: |
-          python - <<'EOF'
-          import os
-          import json
-          from google.auth.transport.requests import Request
-          from google.oauth2.service_account import Credentials
-          from googleapiclient.discovery import build
-          from googleapiclient.http import MediaFileUpload
+          mkdir -p ~/.config/rclone
+          echo "$GDRIVE_SERVICE_ACCOUNT" > ~/service_account.json
           
-          # Parse credentials from environment variable
-          credentials_json = os.environ.get('GDRIVE_CREDENTIALS')
-          credentials_dict = json.loads(credentials_json)
+          # Verify service account file was created
+          if [ ! -s ~/service_account.json ]; then
+            echo "ERROR: Service account file is empty!"
+            exit 1
+          fi
           
-          # Authenticate
-          credentials = Credentials.from_service_account_info(
-              credentials_dict,
-              scopes=['https://www.googleapis.com/auth/drive.file']
-          )
+          # Create rclone config with proper formatting
+          cat > ~/.config/rclone/rclone.conf << 'RCLONE_EOF'
+          [gdrive]
+          type = drive
+          scope = drive.file
+          service_account_file = /home/runner/service_account.json
+          RCLONE_EOF
           
-          # Build Drive API client
-          drive_service = build('drive', 'v3', credentials=credentials)
-          
-          # File to upload
-          file_path = '__spotify.png'
-          folder_id = os.environ.get('GDRIVE_FOLDER_ID')
-          
-          # Upload file
-          file_metadata = {
-              'name': '__spotify.png',
-              'parents': [folder_id]
-          }
-          
-          media = MediaFileUpload(file_path, mimetype='image/png')
-          
-          file = drive_service.files().create(
-              body=file_metadata,
-              media_body=media,
-              fields='id'
-          ).execute()
-          
-          print(f"File uploaded successfully! File ID: {file.get('id')}")
-          EOF
+          # Test rclone config
+          rclone version
+          rclone listremotes
 
-      - name: Upload artifact (optional)
-        uses: actions/upload-artifact@v3
+      # Step 4: Prepare paths and clean old outputs
+      - name: Prepare paths
+        run: |
+          mkdir -p output tmp
+          rm -rf output/* tmp/*
+
+      # Step 5: Run your reel generation script
+      - name: Run script
+        run: |
+          if [ ! -f script.sh ]; then
+            echo "ERROR: script.sh not found!"
+            exit 1
+          fi
+          chmod +x script.sh
+          ./script.sh
+
+      # Step 6: Check output files
+      - name: Check output files
+        run: |
+          echo "=== Files in output directory ==="
+          ls -lh output/ || echo "❌ No output files found"
+          du -sh output/ || true
+
+      # Step 7: Upload output as temporary GitHub artifact
+      - name: Upload output artifact (1 day retention)
+        uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: upload-log
+          name: final-video
+          path: output/
           retention-days: 1
+
+      # Step 8: Upload to Google Drive
+      - name: Upload to Google Drive
+        run: |
+          echo "Uploading to Google Drive folder..."
+          rclone copy output/ gdrive:1EVIHk24_3C7DsCLcYoQOdrM_T11UrkWH/ -v --stats 1s
+          echo "✅ Upload complete!"
