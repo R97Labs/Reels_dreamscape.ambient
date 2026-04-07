@@ -1,4 +1,5 @@
- TMP=$(mktemp -d)
+#!/bin/bash
+TMP=$(mktemp -d)
           INPUT_DIR="./reels"
           AUDIO_DIR="./audio"
           FONT="./Inter-Black.ttf"
