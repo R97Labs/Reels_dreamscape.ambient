@@ -17,14 +17,14 @@ jobs:
         run: |
           echo '${{ secrets.GDRIVE_SERVICE_ACCOUNT }}' > sa.json
 
-      - name: Upload to Specific Folder
+      - name: Upload File to GDrive
         env:
           # Configuration via environment variables
           RCLONE_CONFIG_MYDRIVE_TYPE: drive
           RCLONE_CONFIG_MYDRIVE_SCOPE: drive
           RCLONE_CONFIG_MYDRIVE_SERVICE_ACCOUNT_FILE: sa.json
+          # THIS IS THE KEY FIX:
+          RCLONE_CONFIG_MYDRIVE_ROOT_FOLDER_ID: "1EVIHk24_3C7DsCLcYoQOdrM_T11UrkWH"
         run: |
-          rclone copy spotify.png mydrive: \
-          --drive-root-folder-id "1EVIHk24_3C7DsCLcYoQOdrM_T11UrkWH" \
-          --drive-use-trash=false \
-          -v
+          # We use mydrive: (with the colon) to reference the config above
+          rclone copy spotify.png mydrive: -v
