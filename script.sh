@@ -7,7 +7,7 @@ INPUT_DIR="./reels"
 AUDIO_DIR="./audio"
 LOGO_PATH="./spotify.png"
 QUOTES_FILE="./quotes.txt"
-OUTPUT_DIR="./out"
+OUTPUT_DIR="./output"
 FONT="./Inter-Black.ttf"
 
 # Ensure output exists
