@@ -92,10 +92,10 @@ if [ -n "$GH_TOKEN" ]; then
     # We construct the link right here in the script
     DIRECT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG_NAME/$url_filename"
     
-    if [ -n "$WEBHOOK_URL" ]; then
+if [ -n "$WEBHOOK_URL" ]; then
         echo "🚀 Sending Webhook..."
         curl -X POST -H "Content-Type: application/json" \
-          -d "{\"Downloadlink\": \"$DIRECT_URL\", \"File name\": \"${safe_name\}"}" \
+          -d "{\"Downloadlink\": \"$DIRECT_URL\", \"File name\": \"$safe_name\"}" \
           "$WEBHOOK_URL"
     fi
 
