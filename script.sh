@@ -76,7 +76,7 @@ FADE_VAL=$(echo "$DUR" | awk '{print ($1 > 2) ? $1 - 2 : 0}')
 safe_name=$(echo "$raw" | tr -cd '[:alnum:] ' | cut -c1-50 | xargs)
 
 # Force dots or underscores so the URL works perfectly
-url_filename="${safe_name// /.}.mp4"
+url_filename="${safe_name// /_}.mp4"
 out_file="$OUTPUT_DIR/$url_filename"
 
 ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
