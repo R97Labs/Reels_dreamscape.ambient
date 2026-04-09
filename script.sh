@@ -54,8 +54,9 @@ FILTER="[1:v]loop=-1:1:0,scale=180:-1,format=rgba,fade=t=in:st=${logo_start}:d=0
 box=1:boxcolor=black@0.7:boxborderw=20:line_spacing=15:x=(w-text_w)/2:y=(h*0.15):expansion=none[v_f]"
 
 VISUAL_MASTER="$TMP/visual_master.mp4"
+# Slower render, but much smaller file
 ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "$FILTER" \
-  -map "[v_f]" -c:v libx264 -preset fast -crf 22 -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
+  -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
 
 # 4. FINAL AUDIO GLUE
 echo "🎵 Adding Music..."
