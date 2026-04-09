@@ -102,13 +102,17 @@ gh release create "$TAG_NAME" "$out_file" \
 # 3. Construct the DIRECT download URL
 # Replace YOUR_USER and YOUR_REPO with your actual details
 DIRECT_URL="https://github.com/hiddenmemoriz/hiddenmemoriz/releases/download/$TAG_NAME/${safe_name// /_}.mp4"
-
+# Use the original safe_name for the "File name" display
+DISPLAY_NAME="${safe_name}.mp4"
 # 4. SEND TO WEBHOOK
 echo "🚀 Sending direct link to webhook..."
 WEBHOOK_URL="https://hook.eu2.make.com/g89huhyl3qmcpvupe3p7nnsl6fq8uzk3"
 
 curl -X POST -H "Content-Type: application/json" \
-  -d "{\"content\": \"🎥 **New Reel Generated!**\nDirect MP4 Link: $DIRECT_URL\"}" $WEBHOOK_URL
+  -d "{
+    \"Downloadlink\": \"$DIRECT_URL\",
+    \"File name\": \"$DISPLAY_NAME\"
+  }" $WEBHOOK_URL
 
 # 5. AUTO-CLEANUP (The "Retention" Logic)
 # This deletes any releases older than 24 hours to save space
