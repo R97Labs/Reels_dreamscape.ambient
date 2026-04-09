@@ -81,7 +81,8 @@ out_file="$OUTPUT_DIR/$url_filename"
 
 ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
   -filter_complex "[1:a]afade=t=out:st=${FADE_VAL}:d=2[aud]" \
-  -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest "$out_file" -y -loglevel warning
+  -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
+  -movflags +faststart "$out_file" -y -loglevel warning
 
 # --- 5. GITHUB RELEASE & WEBHOOK (All in one place) ---
 if [ -n "$GH_TOKEN" ]; then
