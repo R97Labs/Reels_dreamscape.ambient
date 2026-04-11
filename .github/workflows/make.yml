@@ -1,0 +1,40 @@
+name: Render Reel Video
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '0 9 * * *'
+      timezone: 'Asia/Kolkata'
+    - cron: '0 12 * * *'
+      timezone: 'Asia/Kolkata'
+    - cron: '0 15 * * *'
+      timezone: 'Asia/Kolkata'
+    - cron: '0 18 * * *'
+      timezone: 'Asia/Kolkata'
+    - cron: '0 21 * * *'
+      timezone: 'Asia/Kolkata'
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Run Everything
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          SHEETDB_URL: ${{ secrets.SHEETDB_URL }}
+        run: |
+          chmod +x make.sh
+          ./make.sh

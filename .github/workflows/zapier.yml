@@ -1,6 +1,7 @@
 name: Render Reel Video
 
 on:
+
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
@@ -32,5 +33,5 @@ jobs:
           WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
           SHEETDB_URL: ${{ secrets.SHEETDB_URL }}
         run: |
-          chmod +x script.sh
-          ./script.sh
+          chmod +x zapier.sh
+          ./zapier.sh
