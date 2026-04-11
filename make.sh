@@ -7,9 +7,9 @@ set -e
 TMP=$(mktemp -d)
 INPUT_DIR="./reels"
 AUDIO_DIR="./audio"
-LOGO_PATH="./assets/spotify.png"
 QUOTES_FILE="./assets/quotes.txt"
 FONT="./assets/Inter-Black.ttf"
+LOGO_PATH="./assets/spotify.png"
 OUTPUT_DIR="./output"
 
 mkdir -p "$OUTPUT_DIR"
