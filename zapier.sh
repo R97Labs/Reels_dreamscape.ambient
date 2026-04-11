@@ -33,11 +33,12 @@ AUDIO_FILE=$(find "$AUDIO_DIR" -maxdepth 1 -type f -iname "*.mp3" | sort -R | he
 
 if [ ${#FILES[@]} -eq 0 ]; then echo "❌ No videos found in $INPUT_DIR"; exit 1; fi
 
-# --- 2. MERGE CLIPS ---
-echo "🎬 Step 1: Processing Clips..."
+# --- 2. MERGE CLIPS (4K SCALING) ---
+echo "🎬 Step 1: Processing Clips to 4K..."
 i=1
 for f in "${FILES[@]}"; do
-  ffmpeg -i "$f" -t 1 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30" \
+  # Scaled to 2160x3840 (4K Vertical)
+  ffmpeg -i "$f" -t 1 -vf "scale=2160:3840:force_original_aspect_ratio=decrease,pad=2160:3840:(ow-iw)/2:(oh-ih)/2:black,fps=30" \
     -c:v libx264 -preset superfast -pix_fmt yuv420p -an "$TMP/clip_$i.mp4" -y -loglevel error
   echo "file '$TMP/clip_$i.mp4'" >> "$TMP/list.txt"
   i=$((i+1))
@@ -47,24 +48,31 @@ MERGED_RAW="$TMP/merged_raw.mp4"
 ffmpeg -f concat -safe 0 -i "$TMP/list.txt" -c copy "$MERGED_RAW" -y -loglevel error
 DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$MERGED_RAW")
 
-# --- 3. APPLY LOGO & QUOTE ---
-echo "🎨 Step 2: Applying Visuals..."
+# --- 3. APPLY LOGO & QUOTE (4K PROPORTIONS) ---
+echo "🎨 Step 2: Applying Visuals (4K Settings)..."
 TOTAL=$(wc -l < "$QUOTES_FILE" | xargs)
 line=$((RANDOM % TOTAL + 1))
 raw=$(sed -n "${line}p" "$QUOTES_FILE" | perl -pe 's/[^[:ascii:]]//g; s/[\x00-\x1f\x7f]//g' | xargs)
-echo "$raw" | fold -s -w 45 > "$TMP/quote.txt"
+
+# Shorter character wrap for 4K readability
+echo "$raw" | fold -s -w 30 > "$TMP/quote.txt"
 
 logo_start=$(echo "$DUR" | awk '{print $1 / 2}')
 logo_fade=$(echo "$DUR" | awk '{print $1 - 1.2}')
 
-FILTER="[1:v]loop=-1:1:0,scale=180:-1,format=rgba,fade=t=in:st=${logo_start}:d=0.5:alpha=1,fade=t=out:st=${logo_fade}:d=0.5:alpha=1[logo_p]; \
-[0:v][logo_p]overlay=x=(W-w)/2:y=H-h-120:shortest=1[v_l]; \
-[v_l]drawtext=fontfile='${FONT}':textfile='$TMP/quote.txt':fontcolor=white:fontsize=35: \
-box=1:boxcolor=black@0.7:boxborderw=20:line_spacing=15:x=(w-text_w)/2:y=(h*0.15):expansion=none[v_f]"
+# SCALE: Logo increased to 360px wide
+# FONTSIZE: Increased to 120 for 4K
+# BOXBORDER: Increased to 40
+# Y-POSITION: Adjusted for 4K height
+FILTER="[1:v]loop=-1:1:0,scale=360:-1,format=rgba,fade=t=in:st=${logo_start}:d=0.5:alpha=1,fade=t=out:st=${logo_fade}:d=0.5:alpha=1[logo_p]; \
+[0:v][logo_p]overlay=x=(W-w)/2:y=H-h-240:shortest=1[v_l]; \
+[v_l]drawtext=fontfile='${FONT}':textfile='$TMP/quote.txt':fontcolor=white:fontsize=120: \
+box=1:boxcolor=black@0.7:boxborderw=40:line_spacing=30:x=(w-text_w)/2:y=(h*0.25):expansion=none[v_f]"
 
 VISUAL_MASTER="$TMP/visual_master.mp4"
+# CRF 18 ensures high quality 4K output
 ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "$FILTER" \
-  -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -tune stillimage -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
+  -map "[v_f]" -c:v libx264 -preset veryslow -crf 18 -tune stillimage -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
 
 # --- 4. FINAL AUDIO & RENAMING ---
 echo "🎵 Step 3: Adding Audio..."
@@ -80,22 +88,19 @@ out_file="$OUTPUT_DIR/$url_filename"
 
 ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
   -filter_complex "[1:a]afade=t=out:st=${FADE_VAL}:d=2[aud]" \
-  -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
+  -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 192k -shortest \
   -movflags +faststart "$out_file" -y -loglevel warning
 
-# --- 5. CATBOX, GITHUB RELEASE, WEBHOOK & SHEETDB ---
+# --- 5. CLOUD UPLOADS & LOGGING ---
 if [ -n "$GH_TOKEN" ]; then
-    # 1. Upload to Catbox (Direct Link for Instagram)
     echo "📤 Uploading to Catbox..."
     CAT_URL=$(curl --silent --fail -F "reqtype=fileupload" -F "fileToUpload=@$out_file" https://catbox.moe/user/api.php || echo "CATBOX_UPLOAD_FAILED")
     
-    # 2. Create GitHub Release (Backup Storage)
     echo "📦 Creating GitHub Release..."
     TAG_NAME="v-${GITHUB_RUN_ID:-$(date +%s)}"
     gh release create "$TAG_NAME" "$out_file" --title "Reel: $safe_name"
     GHT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG_NAME/$url_filename"
     
-    # 3. Send Webhook to Make.com
     if [ -n "$WEBHOOK_URL" ]; then
         echo "🚀 Sending Webhook..."
         curl -X POST -H "Content-Type: application/json" \
@@ -103,22 +108,13 @@ if [ -n "$GH_TOKEN" ]; then
           "$WEBHOOK_URL"
     fi
 
-    # 4. Log to Google Sheets via SheetDB
     if [ -n "$SHEETDB_URL" ]; then
         echo "📊 Logging to Google Sheets..."
-        
-        # Get IST Timestamp
         DT=$(date -d "+5 hours 30 minutes" "+%Y-%m-%d %H:%M:%S")
-
-        # PAYLOAD matching your EXACT headers: Video URL, Title, DATETIME
         PAYLOAD="{\"data\": [{\"Video URL\": \"$GHT_URL\", \"Title\": \"$safe_name\", \"DATETIME\": \"$DT\"}]}"
-
-        curl -s -X POST "$SHEETDB_URL" \
-          -H "Content-Type: application/json" \
-          -d "$PAYLOAD"
+        curl -s -X POST "$SHEETDB_URL" -H "Content-Type: application/json" -d "$PAYLOAD"
     fi
     
-    # 5. Cleanup old releases
     echo "🧹 Cleaning up old releases..."
     OLD_RELEASES=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep "v-" | grep -v "$TAG_NAME") || true
     for old_tag in $OLD_RELEASES; do
@@ -126,7 +122,5 @@ if [ -n "$GH_TOKEN" ]; then
     done
 fi
 
-echo "✅ SUCCESS!"
+echo "✅ SUCCESS! 4K Reel Created."
 rm -rf "$TMP"
-
- 
