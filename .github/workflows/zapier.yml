@@ -1,6 +1,9 @@
 name: Render Reel Video
 
 on:
+  push:
+    branches:
+      - '*'
   workflow_dispatch:
   schedule:
     - cron: '0 0 * * *'
