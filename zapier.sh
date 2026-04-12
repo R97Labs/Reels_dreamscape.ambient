@@ -82,7 +82,7 @@ ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
   -filter_complex "[1:a]afade=t=out:st=${FADE_VAL}:d=2[aud]" \
   -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
   -movflags +faststart "$out_file" -y -loglevel warning
-
+  
 # --- 5. LITTERBOX, GITHUB RELEASE & WEBHOOK ---
 if [ -f "$out_file" ]; then
     echo "-----------------------------------------------"
@@ -135,7 +135,13 @@ EOF
         echo "✨ Webhook Sent!"
     fi
 
-echo "✅ SUCCESS!"
-rm -rf "$TMP"
-
- 
+    # 5. Cleanup
+    if [ -n "$GH_TOKEN" ]; then
+        echo "🧹 Cleaning up old releases..."
+        OLD_RELEASES=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep "v-" | grep -v "$TAG_NAME") || true
+        for old_tag in $OLD_RELEASES; do
+            gh release delete "$old_tag" --yes --cleanup-tag || true
+        done
+    fi
+    echo "-----------------------------------------------"
+fi
