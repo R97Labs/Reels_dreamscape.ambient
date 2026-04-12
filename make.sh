@@ -90,10 +90,14 @@ if [ -n "$GH_TOKEN" ]; then
     gh release create "$TAG_NAME" "$out_file" --title "Reel: $safe_name"
     GHT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG_NAME/$url_filename"
     
+    # 🕒 ADDED: Wait 5 seconds for GitHub to propagate the file
+    echo "⏳ Waiting for asset propagation..."
+    sleep 5
+
     if [ -n "$WEBHOOK_URL" ]; then
         echo "🚀 Sending Webhook..."
         curl -X POST -H "Content-Type: application/json" \
-          -d "{\"fileUrl\": \"$GHT_URL\", \"fileName\": \"$safe_name\"}" \
+          -d "{\"downloadLink\": \"$GHT_URL\", \"fileName\": \"$safe_name\"}" \
           "$WEBHOOK_URL"
     fi
 
