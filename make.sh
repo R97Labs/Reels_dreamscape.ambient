@@ -37,10 +37,10 @@ if [ ${#FILES[@]} -eq 0 ]; then echo "❌ No videos found in $INPUT_DIR"; exit 1
 echo "🎬 Step 1: Processing Clips..."
 i=1
 for f in "${FILES[@]}"; do
-  ffmpeg -i "$f" -t 1 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30" \
+    ffmpeg -i "$f" -t 1 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30" \
     -c:v libx264 -preset superfast -pix_fmt yuv420p -an "$TMP/clip_$i.mp4" -y -loglevel error
-  echo "file '$TMP/clip_$i.mp4'" >> "$TMP/list.txt"
-  i=$((i+1))
+    echo "file '$TMP/clip_$i.mp4'" >> "$TMP/list.txt"
+    i=$((i+1))
 done
 
 MERGED_RAW="$TMP/merged_raw.mp4"
@@ -64,7 +64,7 @@ box=1:boxcolor=black@0.7:boxborderw=20:line_spacing=15:x=(w-text_w)/2:y=(h*0.15)
 
 VISUAL_MASTER="$TMP/visual_master.mp4"
 ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "$FILTER" \
-  -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -tune stillimage -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
+    -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -tune stillimage -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
 
 # --- 4. FINAL AUDIO & RENAMING ---
 echo "🎵 Step 3: Adding Audio..."
@@ -79,46 +79,27 @@ url_filename="${safe_name// /_}.mp4"
 out_file="$OUTPUT_DIR/$url_filename"
 
 ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
-  -filter_complex "[1:a]afade=t=out:st=${FADE_VAL}:d=2[aud]" \
-  -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
-  -movflags +faststart "$out_file" -y -loglevel warning
+    -filter_complex "[1:a]afade=t=out:st=${FADE_VAL}:d=2[aud]" \
+    -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
+    -movflags +faststart "$out_file" -y -loglevel warning
 
-# --- 5. CATBOX, GITHUB RELEASE, WEBHOOK & SHEETDB ---
+# --- 5. GITHUB RELEASE & WEBHOOK ---
 if [ -n "$GH_TOKEN" ]; then
-    # 1. Upload to Catbox (Direct Link for Instagram)
-    echo "📤 Uploading to Catbox..."
-    CAT_URL=$(curl --silent --fail -F "reqtype=fileupload" -F "fileToUpload=@$out_file" https://catbox.moe/user/api.php || echo "CATBOX_UPLOAD_FAILED")
-    
-    # 2. Create GitHub Release (Backup Storage)
+    # 1. Create GitHub Release (Main Storage)
     echo "📦 Creating GitHub Release..."
     TAG_NAME="v-${GITHUB_RUN_ID:-$(date +%s)}"
     gh release create "$TAG_NAME" "$out_file" --title "Reel: $safe_name"
     GHT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG_NAME/$url_filename"
     
-    # 3. Send Webhook to Make.com
+    # 2. Send Webhook to Make.com
     if [ -n "$WEBHOOK_URL" ]; then
         echo "🚀 Sending Webhook..."
         curl -X POST -H "Content-Type: application/json" \
-          -d "{\"downloadLink\": \"$GHT_URL\", \"AlternativeDownLink\": \"$CAT_URL\", \"fileName\": \"$safe_name\"}" \
+          -d "{\"fileUrl\": \"$GHT_URL\", \"fileName\": \"$safe_name\"}" \
           "$WEBHOOK_URL"
     fi
 
-    # 4. Log to Google Sheets via SheetDB
-    if [ -n "$SHEETDB_URL" ]; then
-        echo "📊 Logging to Google Sheets..."
-        
-        # Get IST Timestamp
-        DT=$(date -d "+5 hours 30 minutes" "+%Y-%m-%d %H:%M:%S")
-
-        # PAYLOAD matching your EXACT headers: Video URL, Title, DATETIME
-        PAYLOAD="{\"data\": [{\"Video URL\": \"$GHT_URL\", \"Title\": \"$safe_name\", \"DATETIME\": \"$DT\"}]}"
-
-        curl -s -X POST "$SHEETDB_URL" \
-          -H "Content-Type: application/json" \
-          -d "$PAYLOAD"
-    fi
-    
-    # 5. Cleanup old releases
+    # 3. Cleanup old releases
     echo "🧹 Cleaning up old releases..."
     OLD_RELEASES=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep "v-" | grep -v "$TAG_NAME") || true
     for old_tag in $OLD_RELEASES; do
@@ -128,5 +109,3 @@ fi
 
 echo "✅ SUCCESS!"
 rm -rf "$TMP"
-
- 
