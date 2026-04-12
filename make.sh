@@ -27,9 +27,9 @@ if [ ! -f "$FONT" ]; then
     fi
 fi
 
-# Pick assets
-FILES=($(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" \) | sort -R | head -n 10))
-AUDIO_FILE=$(find "$AUDIO_DIR" -maxdepth 1 -type f -iname "*.mp3" | sort -R | head -n 1)
+# Pick assets - Optimized to avoid Broken Pipe error
+FILES=($(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" \) | shuf -n 10))
+AUDIO_FILE=$(find "$AUDIO_DIR" -maxdepth 1 -type f -iname "*.mp3" | shuf -n 1)
 
 if [ ${#FILES[@]} -eq 0 ]; then echo "❌ No videos found in $INPUT_DIR"; exit 1; fi
 
@@ -85,13 +85,11 @@ ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
 
 # --- 5. GITHUB RELEASE & WEBHOOK ---
 if [ -n "$GH_TOKEN" ]; then
-    # 1. Create GitHub Release (Main Storage)
     echo "📦 Creating GitHub Release..."
     TAG_NAME="v-${GITHUB_RUN_ID:-$(date +%s)}"
     gh release create "$TAG_NAME" "$out_file" --title "Reel: $safe_name"
     GHT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG_NAME/$url_filename"
     
-    # 2. Send Webhook to Make.com
     if [ -n "$WEBHOOK_URL" ]; then
         echo "🚀 Sending Webhook..."
         curl -X POST -H "Content-Type: application/json" \
@@ -99,7 +97,6 @@ if [ -n "$GH_TOKEN" ]; then
           "$WEBHOOK_URL"
     fi
 
-    # 3. Cleanup old releases
     echo "🧹 Cleaning up old releases..."
     OLD_RELEASES=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep "v-" | grep -v "$TAG_NAME") || true
     for old_tag in $OLD_RELEASES; do
