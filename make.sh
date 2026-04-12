@@ -83,29 +83,43 @@ ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
     -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
     -movflags +faststart "$out_file" -y -loglevel warning
 
-# --- 5. CATBOX, GITHUB RELEASE & WEBHOOK ---
+# --- 5. BASHUPLOAD, GITHUB RELEASE & WEBHOOK ---
 if [ -f "$out_file" ]; then
-    # 1. Upload to Catbox (For immediate automation success)
-    echo "📤 Uploading to Catbox..."
-    CAT_URL=$(curl -s -F "reqtype=fileupload" -F "fileToUpload=@$out_file" https://catbox.moe/user/api.php)
+    echo "-----------------------------------------------"
+    echo "📤 STARTING UPLOAD PROCESS..."
+
+    # 1. Upload to BashUpload (Instant direct link for Google Drive)
+    echo "🚀 Uploading to BashUpload..."
+    # -T uploads the file; BashUpload returns the raw URL
+    FINAL_URL=$(curl -s https://bashupload.com/ -T "$out_file")
     
-    # 2. Create GitHub Release (For permanent backup)
+    # LOG: Print BashUpload Link
+    if [[ "$FINAL_URL" == http* ]]; then
+        echo "✅ BASHUPLOAD URL: $FINAL_URL"
+    else
+        echo "❌ BASHUPLOAD FAILED: $FINAL_URL"
+    fi
+
+    # 2. Create GitHub Release (Permanent archive)
     if [ -n "$GH_TOKEN" ]; then
         echo "📦 Creating GitHub Release..."
         TAG_NAME="v-${GITHUB_RUN_ID:-$(date +%s)}"
         gh release create "$TAG_NAME" "$out_file" --title "Reel: $safe_name"
         GHT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG_NAME/$url_filename"
+        
+        # LOG: Print GitHub Link
+        echo "🔗 GITHUB RELEASE URL: $GHT_URL"
     fi
 
     # 3. Send Webhook
     if [ -n "$WEBHOOK_URL" ]; then
-        echo "🚀 Sending to Webhook..."
+        echo "📡 Sending Webhook to Automation..."
         DT=$(date -d "+5 hours 30 minutes" "+%Y-%m-%d %H:%M:%S")
 
-        # We send CAT_URL as 'fileUrl' because it is 100% live immediately
+        # Payload uses BashUpload as the primary download source
         PAYLOAD=$(cat <<EOF
 {
-  "fileUrl": "$CAT_URL",
+  "fileUrl": "$FINAL_URL",
   "githubUrl": "$GHT_URL",
   "fileName": "$safe_name",
   "DATETIME": "$DT"
@@ -113,9 +127,10 @@ if [ -f "$out_file" ]; then
 EOF
 )
         curl -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
+        echo "✨ Webhook Sent!"
     fi
 
-    # 4. Cleanup old GitHub releases (Backup maintenance)
+    # 4. Cleanup old GitHub releases
     if [ -n "$GH_TOKEN" ]; then
         echo "🧹 Cleaning up old releases..."
         OLD_RELEASES=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep "v-" | grep -v "$TAG_NAME") || true
@@ -123,7 +138,5 @@ EOF
             gh release delete "$old_tag" --yes --cleanup-tag || true
         done
     fi
+    echo "-----------------------------------------------"
 fi
-
-echo "✅ SUCCESS!"
-rm -rf "$TMP"
