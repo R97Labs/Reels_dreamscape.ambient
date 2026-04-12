@@ -27,9 +27,9 @@ if [ ! -f "$FONT" ]; then
     fi
 fi
 
-# Pick assets
-FILES=($(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" \) | sort -R | head -n 10))
-AUDIO_FILE=$(find "$AUDIO_DIR" -maxdepth 1 -type f -iname "*.mp3" | sort -R | head -n 1)
+# Pick assets - Optimized to avoid Broken Pipe error
+FILES=($(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" \) | shuf -n 10))
+AUDIO_FILE=$(find "$AUDIO_DIR" -maxdepth 1 -type f -iname "*.mp3" | shuf -n 1)
 
 if [ ${#FILES[@]} -eq 0 ]; then echo "❌ No videos found in $INPUT_DIR"; exit 1; fi
 
@@ -37,10 +37,10 @@ if [ ${#FILES[@]} -eq 0 ]; then echo "❌ No videos found in $INPUT_DIR"; exit 1
 echo "🎬 Step 1: Processing Clips..."
 i=1
 for f in "${FILES[@]}"; do
-  ffmpeg -i "$f" -t 1 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30" \
+    ffmpeg -i "$f" -t 1 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30" \
     -c:v libx264 -preset superfast -pix_fmt yuv420p -an "$TMP/clip_$i.mp4" -y -loglevel error
-  echo "file '$TMP/clip_$i.mp4'" >> "$TMP/list.txt"
-  i=$((i+1))
+    echo "file '$TMP/clip_$i.mp4'" >> "$TMP/list.txt"
+    i=$((i+1))
 done
 
 MERGED_RAW="$TMP/merged_raw.mp4"
@@ -64,7 +64,7 @@ box=1:boxcolor=black@0.7:boxborderw=20:line_spacing=15:x=(w-text_w)/2:y=(h*0.15)
 
 VISUAL_MASTER="$TMP/visual_master.mp4"
 ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "$FILTER" \
-  -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -tune stillimage -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
+    -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -tune stillimage -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
 
 # --- 4. FINAL AUDIO & RENAMING ---
 echo "🎵 Step 3: Adding Audio..."
@@ -79,54 +79,69 @@ url_filename="${safe_name// /_}.mp4"
 out_file="$OUTPUT_DIR/$url_filename"
 
 ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
-  -filter_complex "[1:a]afade=t=out:st=${FADE_VAL}:d=2[aud]" \
-  -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
-  -movflags +faststart "$out_file" -y -loglevel warning
+    -filter_complex "[1:a]afade=t=out:st=${FADE_VAL}:d=2[aud]" \
+    -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
+    -movflags +faststart "$out_file" -y -loglevel warning
 
-# --- 5. CATBOX, GITHUB RELEASE, WEBHOOK & SHEETDB ---
-if [ -n "$GH_TOKEN" ]; then
-    # 1. Upload to Catbox (Direct Link for Instagram)
-    echo "📤 Uploading to Catbox..."
-    CAT_URL=$(curl --silent --fail -F "reqtype=fileupload" -F "fileToUpload=@$out_file" https://catbox.moe/user/api.php || echo "CATBOX_UPLOAD_FAILED")
+# --- 5. LITTERBOX, GITHUB RELEASE & WEBHOOK ---
+if [ -f "$out_file" ]; then
+    echo "-----------------------------------------------"
+    echo "📤 STARTING UPLOAD PROCESS..."
+
+    # 1. Upload to Litterbox (1 hour expiry - fast and direct)
+    echo "🚀 Uploading to Litterbox..."
+    # time can be 1h, 12h, or 24h
+    FINAL_URL=$(curl -s -X POST -F "reqtype=fileupload" -F "time=1h" -F "fileToUpload=@$out_file" https://litterbox.catbox.moe/resources/internals/api.php)
     
-    # 2. Create GitHub Release (Backup Storage)
-    echo "📦 Creating GitHub Release..."
-    TAG_NAME="v-${GITHUB_RUN_ID:-$(date +%s)}"
-    gh release create "$TAG_NAME" "$out_file" --title "Reel: $safe_name"
-    GHT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG_NAME/$url_filename"
-    
-    # 3. Send Webhook to Make.com
-    if [ -n "$WEBHOOK_URL" ]; then
-        echo "🚀 Sending Webhook..."
-        curl -X POST -H "Content-Type: application/json" \
-          -d "{\"downloadLink\": \"$GHT_URL\", \"AlternativeDownLink\": \"$CAT_URL\", \"fileName\": \"$safe_name\"}" \
-          "$WEBHOOK_URL"
+    if [[ "$FINAL_URL" == http* ]]; then
+        echo "✅ LITTERBOX URL: $FINAL_URL"
+        USE_FALLBACK=false
+    else
+        echo "⚠️ LITTERBOX FAILED: $FINAL_URL"
+        USE_FALLBACK=true
     fi
 
-    # 4. Log to Google Sheets via SheetDB
-    if [ -n "$SHEETDB_URL" ]; then
-        echo "📊 Logging to Google Sheets..."
-        
-        # Get IST Timestamp
+    # 2. Create GitHub Release (Permanent archive)
+    if [ -n "$GH_TOKEN" ]; then
+        echo "📦 Creating GitHub Release..."
+        TAG_NAME="v-${GITHUB_RUN_ID:-$(date +%s)}"
+        gh release create "$TAG_NAME" "$out_file" --title "Reel: $safe_name"
+        GHT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG_NAME/$url_filename"
+        echo "🔗 GITHUB RELEASE URL: $GHT_URL"
+    fi
+
+    # 3. Fail-safe Selection
+    if [ "$USE_FALLBACK" = true ]; then
+        echo "🔄 Falling back to GitHub URL. Waiting 15s for propagation..."
+        FINAL_URL="$GHT_URL"
+        sleep 15
+    fi
+
+    # 4. Send Webhook
+    if [ -n "$WEBHOOK_URL" ]; then
+        echo "📡 Sending Webhook to Automation..."
         DT=$(date -d "+5 hours 30 minutes" "+%Y-%m-%d %H:%M:%S")
 
-        # PAYLOAD matching your EXACT headers: Video URL, Title, DATETIME
-        PAYLOAD="{\"data\": [{\"Video URL\": \"$GHT_URL\", \"Title\": \"$safe_name\", \"DATETIME\": \"$DT\"}]}"
-
-        curl -s -X POST "$SHEETDB_URL" \
-          -H "Content-Type: application/json" \
-          -d "$PAYLOAD"
+        PAYLOAD=$(cat <<EOF
+{
+  "fileUrl": "$FINAL_URL",
+  "githubUrl": "$GHT_URL",
+  "fileName": "$safe_name",
+  "DATETIME": "$DT"
+}
+EOF
+)
+        curl -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
+        echo "✨ Webhook Sent!"
     fi
-    
-    # 5. Cleanup old releases
-    echo "🧹 Cleaning up old releases..."
-    OLD_RELEASES=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep "v-" | grep -v "$TAG_NAME") || true
-    for old_tag in $OLD_RELEASES; do
-        gh release delete "$old_tag" --yes --cleanup-tag || true
-    done
+
+    # 5. Cleanup
+    if [ -n "$GH_TOKEN" ]; then
+        echo "🧹 Cleaning up old releases..."
+        OLD_RELEASES=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep "v-" | grep -v "$TAG_NAME") || true
+        for old_tag in $OLD_RELEASES; do
+            gh release delete "$old_tag" --yes --cleanup-tag || true
+        done
+    fi
+    echo "-----------------------------------------------"
 fi
-
-echo "✅ SUCCESS!"
-rm -rf "$TMP"
-
- 
