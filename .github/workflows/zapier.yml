@@ -10,6 +10,12 @@ on:
       timezone: 'Asia/Kolkata'
     - cron: '0 6 * * *'
       timezone: 'Asia/Kolkata'
+    - cron: '0 9 * * *'
+      timezone: 'Asia/Kolkata'
+    - cron: '0 12 * * *'
+      timezone: 'Asia/Kolkata'
+    - cron: '0 15 * * *'
+      timezone: 'Asia/Kolkata'
 
 permissions:
   contents: write
