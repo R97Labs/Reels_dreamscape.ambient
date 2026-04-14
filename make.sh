@@ -27,7 +27,7 @@ if [ ! -f "$FONT" ]; then
     fi
 fi
 
-# Pick assets - Optimized to avoid Broken Pipe error
+# Pick assets
 FILES=($(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" \) | shuf -n 10))
 AUDIO_FILE=$(find "$AUDIO_DIR" -maxdepth 1 -type f -iname "*.mp3" | shuf -n 1)
 
@@ -83,41 +83,36 @@ ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
     -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
     -movflags +faststart "$out_file" -y -loglevel warning
 
-# --- 5. LITTERBOX, GITHUB RELEASE & WEBHOOK ---
+# --- 5. GITHUB UPLOAD & WEBHOOK ---
 if [ -f "$out_file" ]; then
     echo "-----------------------------------------------"
-    echo "📤 STARTING UPLOAD PROCESS..."
+    echo "📤 STARTING GITHUB UPLOAD..."
 
-    # 1. Upload to Litterbox (1 hour expiry - fast and direct)
-    echo "🚀 Uploading to Litterbox..."
-    # time can be 1h, 12h, or 24h
-    FINAL_URL=$(curl -s -X POST -F "reqtype=fileupload" -F "time=1h" -F "fileToUpload=@$out_file" https://litterbox.catbox.moe/resources/internals/api.php)
+    # 1. Construct the Direct Link
+    # Structure: https://github.com/OWNER/REPO/blob/BRANCH/output/FILENAME
+    BRANCH="main"
+    REPO_URL="https://github.com/${GITHUB_REPOSITORY}/blob/${BRANCH}/output/${url_filename}"
     
-    if [[ "$FINAL_URL" == http* ]]; then
-        echo "✅ LITTERBOX URL: $FINAL_URL"
-        USE_FALLBACK=false
-    else
-        echo "⚠️ LITTERBOX FAILED: $FINAL_URL"
-        USE_FALLBACK=true
-    fi
-
-    # 2. Create GitHub Release (Permanent archive)
+    # Append the token as requested
     if [ -n "$GH_TOKEN" ]; then
-        echo "📦 Creating GitHub Release..."
-        TAG_NAME="v-${GITHUB_RUN_ID:-$(date +%s)}"
-        gh release create "$TAG_NAME" "$out_file" --title "Reel: $safe_name"
-        GHT_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/$TAG_NAME/$url_filename"
-        echo "🔗 GITHUB RELEASE URL: $GHT_URL"
+        FINAL_URL="${REPO_URL}?token=${GH_TOKEN}"
+    else
+        FINAL_URL="${REPO_URL}"
     fi
 
-    # 3. Fail-safe Selection
-    if [ "$USE_FALLBACK" = true ]; then
-        echo "🔄 Falling back to GitHub URL. Waiting 15s for propagation..."
-        FINAL_URL="$GHT_URL"
-        sleep 15
+    echo "🔗 TARGET URL: $FINAL_URL"
+
+    # 2. Push to Repository (Required for the link to work)
+    if [ -n "$GITHUB_ACTIONS" ]; then
+        echo "⚙️ Committing file to repository..."
+        git config --global user.name "github-actions[bot]"
+        git config --global user.email "github-actions[bot]@users.noreply.github.com"
+        git add "$out_file"
+        git commit -m "Upload Reel: $safe_name"
+        git push origin "$BRANCH"
     fi
 
-    # 4. Send Webhook
+    # 3. Send Webhook
     if [ -n "$WEBHOOK_URL" ]; then
         echo "📡 Sending Webhook to Automation..."
         DT=$(date -d "+5 hours 30 minutes" "+%Y-%m-%d %H:%M:%S")
@@ -125,23 +120,14 @@ if [ -f "$out_file" ]; then
         PAYLOAD=$(cat <<EOF
 {
   "fileUrl": "$FINAL_URL",
-  "githubUrl": "$GHT_URL",
   "fileName": "$safe_name",
-  "DATETIME": "$DT"
+  "DATETIME": "$DT",
+  "status": "published_to_repo"
 }
 EOF
 )
         curl -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
         echo "✨ Webhook Sent!"
-    fi
-
-    # 5. Cleanup
-    if [ -n "$GH_TOKEN" ]; then
-        echo "🧹 Cleaning up old releases..."
-        OLD_RELEASES=$(gh release list --limit 20 --json tagName --jq '.[].tagName' | grep "v-" | grep -v "$TAG_NAME") || true
-        for old_tag in $OLD_RELEASES; do
-            gh release delete "$old_tag" --yes --cleanup-tag || true
-        done
     fi
     echo "-----------------------------------------------"
 fi
