@@ -83,38 +83,52 @@ ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
     -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
     -movflags +faststart "$out_file" -y -loglevel warning
 
-# --- 5. GITHUB UPLOAD & WEBHOOK ---
+# --- 5. GITHUB CLEANUP, UPLOAD & WEBHOOK ---
 if [ -f "$out_file" ]; then
     echo "-----------------------------------------------"
     echo "📤 STARTING GITHUB UPLOAD..."
 
-    # 1. Construct the Direct Link
-    # Structure: https://github.com/OWNER/REPO/blob/BRANCH/output/FILENAME
-    BRANCH="beta"
+    # 1. Setup Git Identity
+    git config --global user.name "github-actions[bot]"
+    git config --global user.email "github-actions[bot]@users.noreply.github.com"
+
+    # 2. Clean old files from the output folder (Local and Remote)
+    echo "🧹 Cleaning previous files from output/..."
+    find "$OUTPUT_DIR" -type f ! -name "$url_filename" -delete
+    
+    # Sync Git index with the deletions
+    git add "$OUTPUT_DIR"
+    git rm -r --cached "$OUTPUT_DIR"/* 2>/dev/null || true
+    git add "$out_file"
+
+    # 3. Construct the Direct Link with the Actual Token
+    BRANCH="main"
+    # Note: Use GITHUB_TOKEN or your custom GH_TOKEN secret
+    TOKEN_TO_USE="${GH_TOKEN:-$GITHUB_TOKEN}"
+    
+    # The base URL for the file on GitHub
     REPO_URL="https://github.com/${GITHUB_REPOSITORY}/blob/${BRANCH}/output/${url_filename}"
     
-    # Append the token as requested
-    if [ -n "$GH_TOKEN" ]; then
-        FINAL_URL="${REPO_URL}?token=${GH_TOKEN}"
+    # Append the actual token
+    if [ -n "$TOKEN_TO_USE" ]; then
+        FINAL_URL="${REPO_URL}?token=${TOKEN_TO_USE}"
     else
+        echo "⚠️ Warning: No GH_TOKEN found. Sending URL without token."
         FINAL_URL="${REPO_URL}"
     fi
 
     echo "🔗 TARGET URL: $FINAL_URL"
 
-    # 2. Push to Repository (Required for the link to work)
+    # 4. Push changes so the link becomes active
     if [ -n "$GITHUB_ACTIONS" ]; then
-        echo "⚙️ Committing file to repository..."
-        git config --global user.name "github-actions[bot]"
-        git config --global user.email "github-actions[bot]@users.noreply.github.com"
-        git add "$out_file"
-        git commit -m "Upload Reel: $safe_name"
+        echo "⚙️ Committing changes..."
+        git commit -m "Refresh Reel: $safe_name"
         git push origin "$BRANCH"
     fi
 
-    # 3. Send Webhook
+    # 5. Send Webhook
     if [ -n "$WEBHOOK_URL" ]; then
-        echo "📡 Sending Webhook to Automation..."
+        echo "📡 Sending Webhook..."
         DT=$(date -d "+5 hours 30 minutes" "+%Y-%m-%d %H:%M:%S")
 
         PAYLOAD=$(cat <<EOF
@@ -122,7 +136,7 @@ if [ -f "$out_file" ]; then
   "fileUrl": "$FINAL_URL",
   "fileName": "$safe_name",
   "DATETIME": "$DT",
-  "status": "published_to_repo"
+  "info": "Download via browser or use ?raw=true for direct bots"
 }
 EOF
 )
