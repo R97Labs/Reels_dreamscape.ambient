@@ -97,7 +97,7 @@ if [ -f "$out_file" ]; then
     git rm -r --cached "$OUTPUT_DIR"/* 2>/dev/null || true
     git add "$out_file"
 
-    BRANCH="beta"
+    BRANCH="main"
     # CLEAN PUBLIC URL (No token needed!)
     RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/output/${url_filename}"
 
