@@ -92,34 +92,26 @@ if [ -f "$out_file" ]; then
     git config --global user.name "github-actions[bot]"
     git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-    # 2. Clean old files from the output folder (Local and Remote)
+    # 2. Clean old files from the output folder
     echo "🧹 Cleaning previous files from output/..."
     find "$OUTPUT_DIR" -type f ! -name "$url_filename" -delete
-    
-    # Sync Git index with the deletions
     git add "$OUTPUT_DIR"
     git rm -r --cached "$OUTPUT_DIR"/* 2>/dev/null || true
     git add "$out_file"
 
-    # 3. Construct the Direct Link with the Actual Token
-    BRANCH="beta"
-    # Note: Use GITHUB_TOKEN or your custom GH_TOKEN secret
+    # 3. Construct the Links
+    BRANCH="beta"  # Matches your log output
     TOKEN_TO_USE="${GH_TOKEN:-$GITHUB_TOKEN}"
     
-    # The base URL for the file on GitHub
-    REPO_URL="https://github.com/${GITHUB_REPOSITORY}/blob/${BRANCH}/output/${url_filename}"
+    # This is the "Web View" link you requested
+    VIEW_URL="https://github.com/${GITHUB_REPOSITORY}/blob/${BRANCH}/output/${url_filename}?token=${TOKEN_TO_USE}"
     
-    # Append the actual token
-    if [ -n "$TOKEN_TO_USE" ]; then
-        FINAL_URL="${REPO_URL}?token=${TOKEN_TO_USE}"
-    else
-        echo "⚠️ Warning: No GH_TOKEN found. Sending URL without token."
-        FINAL_URL="${REPO_URL}"
-    fi
+    # This is the "Direct Download" link (Better for bots/automation)
+    RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/output/${url_filename}?token=${TOKEN_TO_USE}"
 
-    echo "🔗 TARGET URL: $FINAL_URL"
+    echo "🔗 VIEW URL: $VIEW_URL"
 
-    # 4. Push changes so the link becomes active
+    # 4. Push changes
     if [ -n "$GITHUB_ACTIONS" ]; then
         echo "⚙️ Committing changes..."
         git commit -m "Refresh Reel: $safe_name"
@@ -131,17 +123,20 @@ if [ -f "$out_file" ]; then
         echo "📡 Sending Webhook..."
         DT=$(date -d "+5 hours 30 minutes" "+%Y-%m-%d %H:%M:%S")
 
+        # Creating a cleaner payload
         PAYLOAD=$(cat <<EOF
 {
-  "fileUrl": "$FINAL_URL",
+  "fileUrl": "$RAW_URL",
+  "webViewUrl": "$VIEW_URL",
   "fileName": "$safe_name",
-  "DATETIME": "$DT",
-  "info": "Download via browser or use ?raw=true for direct bots"
+  "timestamp": "$DT"
 }
 EOF
 )
-        curl -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
-        echo "✨ Webhook Sent!"
+        # Added --fail and -sS to get better error messages if the webhook fails
+        curl -sS --fail -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
+        
+        echo -e "\n✨ Webhook Sent!"
     fi
     echo "-----------------------------------------------"
 fi
