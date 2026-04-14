@@ -90,7 +90,7 @@ if [ -f "$out_file" ]; then
 
     # 1. Construct the Direct Link
     # Structure: https://github.com/OWNER/REPO/blob/BRANCH/output/FILENAME
-    BRANCH="main"
+    BRANCH="beta"
     REPO_URL="https://github.com/${GITHUB_REPOSITORY}/blob/${BRANCH}/output/${url_filename}"
     
     # Append the token as requested
