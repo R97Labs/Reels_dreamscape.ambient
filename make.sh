@@ -22,8 +22,9 @@ AUDIO_FILE=$(find "$AUDIO_DIR" -maxdepth 1 -type f -iname "*.mp3" | shuf -n 1)
 # --- 2. MERGE & PROCESS ---
 echo "🎬 Step 1: Processing Clips..."
 i=1
+# Increased -t to 3 seconds per clip for a better reel length
 for f in "${FILES[@]}"; do
-    ffmpeg -i "$f" -t 1 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30" \
+    ffmpeg -i "$f" -t 3 -vf "scale=1080:1920:force_original_aspect_ratio=decrease,pad=1080:1920:(ow-iw)/2:(oh-ih)/2:black,fps=30" \
     -c:v libx264 -preset superfast -pix_fmt yuv420p -an "$TMP/clip_$i.mp4" -y -loglevel error
     echo "file '$TMP/clip_$i.mp4'" >> "$TMP/list.txt"
     i=$((i+1))
@@ -34,28 +35,25 @@ ffmpeg -f concat -safe 0 -i "$TMP/list.txt" -c copy "$MERGED_RAW" -y -loglevel e
 DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$MERGED_RAW")
 
 # --- 3. APPLY VISUALS & QUOTE ---
-echo "🎨 Step 2: Applying Visuals..."
+echo "🎨 Step 2: Applying Visuals (Duration: ${DUR}s)..."
 TOTAL=$(wc -l < "$QUOTES_FILE" | xargs)
 line=$((RANDOM % TOTAL + 1))
 raw=$(sed -n "${line}p" "$QUOTES_FILE" | perl -pe 's/[^[:ascii:]]//g; s/[\x00-\x1f\x7f]//g' | xargs)
 echo "$raw" | fold -s -w 45 > "$TMP/quote.txt"
 
-# Fade Logic: Logo starts appearing halfway through, fades out 1.2s before end
+# Dynamic Fade: Logo starts halfway, but we ensure it doesn't break on short videos
 logo_start=$(echo "$DUR" | awk '{print $1 / 2}')
-logo_fade_out=$(echo "$DUR" | awk '{print $1 - 1.2}')
+logo_fade_out=$(echo "$DUR" | awk '{print ($1 > 1.5) ? $1 - 1.2 : $1 - 0.2}')
 
-# The Filter: 
-# 1. Scale logo 
-# 2. Fade in starting at logo_start for 0.5s 
-# 3. Fade out starting at logo_fade_out for 0.5s
 FILTER="[1:v]scale=180:-1,format=rgba,fade=t=in:st=${logo_start}:d=0.5:alpha=1,fade=t=out:st=${logo_fade_out}:d=0.5:alpha=1[logo_p]; \
 [0:v][logo_p]overlay=x=(W-w)/2:y=H-h-120:shortest=1[v_l]; \
 [v_l]drawtext=fontfile='${FONT}':textfile='$TMP/quote.txt':fontcolor=white:fontsize=35: \
 box=1:boxcolor=black@0.7:boxborderw=20:line_spacing=15:x=(w-text_w)/2:y=(h*0.15):expansion=none[v_f]"
 
 VISUAL_MASTER="$TMP/visual_master.mp4"
+# Removed 'veryslow' for faster debugging; use 'medium' or 'fast'
 ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "$FILTER" \
-    -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -an "$VISUAL_MASTER" -y -loglevel warning
+    -map "[v_f]" -c:v libx264 -preset fast -crf 24 -an "$VISUAL_MASTER" -y -loglevel warning
 
 # --- 4. FINAL EXPORT ---
 echo "🎵 Step 3: Finalizing Video..."
