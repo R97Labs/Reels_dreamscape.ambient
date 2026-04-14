@@ -66,22 +66,15 @@ VISUAL_MASTER="$TMP/visual_master.mp4"
 ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "$FILTER" \
     -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -tune stillimage -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
 
-# --- 4. FINAL AUDIO & RENAMING ---
-echo "🎵 Step 3: Adding Audio..."
-FADE_VAL=$(echo "$DUR" | awk '{print ($1 > 2) ? $1 - 2 : 0}')
+# --- 4. FINAL EXPORT ---
+echo "🎵 Step 3: Finalizing Video..."
 safe_name=$(echo "$raw" | tr -cd '[:alnum:] ' | cut -c1-100 | xargs)
-
-if [ -z "$safe_name" ] || [ "$safe_name" = " " ]; then
-    safe_name="Reel_$(date +%s)"
-fi
-
 url_filename="${safe_name// /_}.mp4"
+# We define the final path clearly
 out_file="$OUTPUT_DIR/$url_filename"
 
-ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
-    -filter_complex "[1:a]afade=t=out:st=${FADE_VAL}:d=2[aud]" \
-    -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
-    -movflags +faststart "$out_file" -y -loglevel warning
+# Run FFmpeg - this creates the file directly in the output folder
+ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" -c:v copy -c:a aac -shortest "$out_file" -y -loglevel warning
 
 # --- 5. GITHUB UPLOAD (FORCE PUSH TO SAVE SPACE) ---
 if [ -f "$out_file" ]; then
@@ -91,19 +84,21 @@ if [ -f "$out_file" ]; then
     git config --global user.name "github-actions[bot]"
     git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-    # Wipe old files from the output folder locally and in Git index
-    rm -rf "$OUTPUT_DIR"/*
-    cp "$out_file" "$OUTPUT_DIR/"
+    # 🧹 CLEANUP: Remove any OTHER mp4 files in that folder so only the NEW one remains
+    find "$OUTPUT_DIR" -type f ! -name "$url_filename" -delete
     
+    # Update Git tracking
     git add "$OUTPUT_DIR"
+    # This removes deleted files from the git index
     git rm -r --cached "$OUTPUT_DIR"/* 2>/dev/null || true
-    git add "$OUTPUT_DIR/$url_filename"
+    git add "$out_file"
 
-    BRANCH="main"
+    BRANCH="beta"
     RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/output/${url_filename}"
 
     if [ -n "$GITHUB_ACTIONS" ]; then
         echo "⚙️ Force pushing to keep repo size small..."
+        # We use --amend to keep the commit history from growing
         git commit --amend -m "Refresh Reel: $safe_name" || git commit -m "Refresh Reel: $safe_name"
         git push origin "$BRANCH" --force
     fi
@@ -118,8 +113,11 @@ if [ -f "$out_file" ]; then
 }
 EOF
 )
-        # -L is required for Google Apps Script redirects
         curl -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
+        echo -e "\n✨ Done!"
     fi
     echo "-----------------------------------------------"
+else
+    echo "❌ Error: Final video file was not created."
+    exit 1
 fi
