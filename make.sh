@@ -83,60 +83,35 @@ ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
     -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
     -movflags +faststart "$out_file" -y -loglevel warning
 
-# --- 5. GITHUB CLEANUP, UPLOAD & WEBHOOK ---
+# --- 5. GITHUB UPLOAD (PUBLIC REPO VERSION) ---
 if [ -f "$out_file" ]; then
     echo "-----------------------------------------------"
-    echo "📤 STARTING GITHUB UPLOAD..."
+    echo "📤 STARTING PUBLIC GITHUB UPLOAD..."
 
-    # 1. Setup Git Identity
     git config --global user.name "github-actions[bot]"
     git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-    # 2. Clean old files from the output folder
-    echo "🧹 Cleaning previous files from output/..."
+    # Cleanup and Add
     find "$OUTPUT_DIR" -type f ! -name "$url_filename" -delete
     git add "$OUTPUT_DIR"
     git rm -r --cached "$OUTPUT_DIR"/* 2>/dev/null || true
     git add "$out_file"
 
-    # 3. Construct the Links
-    BRANCH="beta"  # Matches your log output
-    TOKEN_TO_USE="${GH_TOKEN:-$GITHUB_TOKEN}"
-    
-    # This is the "Web View" link you requested
-    VIEW_URL="https://github.com/${GITHUB_REPOSITORY}/blob/${BRANCH}/output/${url_filename}?token=${TOKEN_TO_USE}"
-    
-    # This is the "Direct Download" link (Better for bots/automation)
-    RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/output/${url_filename}?token=${TOKEN_TO_USE}"
+    BRANCH="beta"
+    # CLEAN PUBLIC URL (No token needed!)
+    RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/output/${url_filename}"
 
-    echo "🔗 VIEW URL: $VIEW_URL"
-
-    # 4. Push changes
     if [ -n "$GITHUB_ACTIONS" ]; then
-        echo "⚙️ Committing changes..."
-        git commit -m "Refresh Reel: $safe_name"
+        git commit -m "Public Refresh: $safe_name"
         git push origin "$BRANCH"
     fi
 
-    # 5. Send Webhook
     if [ -n "$WEBHOOK_URL" ]; then
         echo "📡 Sending Webhook..."
-        DT=$(date -d "+5 hours 30 minutes" "+%Y-%m-%d %H:%M:%S")
-
-        # Creating a cleaner payload
-        PAYLOAD=$(cat <<EOF
-{
-  "fileUrl": "$RAW_URL",
-  "webViewUrl": "$VIEW_URL",
-  "fileName": "$safe_name",
-  "timestamp": "$DT"
-}
-EOF
-)
-        # Added --fail and -sS to get better error messages if the webhook fails
-        curl -sS --fail -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
+        PAYLOAD="{\"fileUrl\": \"$RAW_URL\", \"fileName\": \"$safe_name\"}"
         
-        echo -e "\n✨ Webhook Sent!"
+        # We still need -L because Google redirects Apps Script URLs
+        curl -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
     fi
     echo "-----------------------------------------------"
 fi
