@@ -83,34 +83,42 @@ ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" \
     -map 0:v -map "[aud]" -c:v copy -c:a aac -b:a 128k -shortest \
     -movflags +faststart "$out_file" -y -loglevel warning
 
-# --- 5. GITHUB UPLOAD (PUBLIC REPO VERSION) ---
+# --- 5. GITHUB UPLOAD (FORCE PUSH TO SAVE SPACE) ---
 if [ -f "$out_file" ]; then
     echo "-----------------------------------------------"
-    echo "📤 STARTING PUBLIC GITHUB UPLOAD..."
+    echo "📤 UPLOADING TO PUBLIC REPO..."
 
     git config --global user.name "github-actions[bot]"
     git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-    # Cleanup and Add
-    find "$OUTPUT_DIR" -type f ! -name "$url_filename" -delete
+    # Wipe old files from the output folder locally and in Git index
+    rm -rf "$OUTPUT_DIR"/*
+    cp "$out_file" "$OUTPUT_DIR/"
+    
     git add "$OUTPUT_DIR"
     git rm -r --cached "$OUTPUT_DIR"/* 2>/dev/null || true
-    git add "$out_file"
+    git add "$OUTPUT_DIR/$url_filename"
 
     BRANCH="main"
-    # CLEAN PUBLIC URL (No token needed!)
     RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/output/${url_filename}"
 
     if [ -n "$GITHUB_ACTIONS" ]; then
-        git commit -m "Public Refresh: $safe_name"
-        git push origin "$BRANCH"
+        echo "⚙️ Force pushing to keep repo size small..."
+        git commit --amend -m "Refresh Reel: $safe_name" || git commit -m "Refresh Reel: $safe_name"
+        git push origin "$BRANCH" --force
     fi
 
+    # --- 6. WEBHOOK CALL ---
     if [ -n "$WEBHOOK_URL" ]; then
         echo "📡 Sending Webhook..."
-        PAYLOAD="{\"fileUrl\": \"$RAW_URL\", \"fileName\": \"$safe_name\"}"
-        
-        # We still need -L because Google redirects Apps Script URLs
+        PAYLOAD=$(cat <<EOF
+{
+  "fileUrl": "$RAW_URL",
+  "fileName": "$safe_name"
+}
+EOF
+)
+        # -L is required for Google Apps Script redirects
         curl -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
     fi
     echo "-----------------------------------------------"
