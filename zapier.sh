@@ -14,7 +14,7 @@ mkdir -p "$OUTPUT_DIR"
 
 # --- 1. ASSET PICKING ---
 # Using shuf for better performance on GitHub
-FILES=($(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" \) | shuf -n 10))
+FILES=($(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" \) | shuf -n 20))
 AUDIO_FILE=$(find "$AUDIO_DIR" -maxdepth 1 -type f -iname "*.mp3" | shuf -n 1)
 
 if [ ${#FILES[@]} -eq 0 ]; then echo "❌ No videos found"; exit 1; fi
