@@ -1,6 +1,4 @@
 #!/bin/bash
-# Set environment for clean execution
-unsetopt HIST_EXPAND 2>/dev/null || true
 set -e
 
 # --- 1. CONFIGURATION ---
@@ -15,25 +13,13 @@ OUTPUT_DIR="./output"
 mkdir -p "$OUTPUT_DIR"
 
 # Asset Check
-[ ! -f "$LOGO_PATH" ] && echo "❌ spotify.png missing" && exit 1
-[ ! -f "$QUOTES_FILE" ] && echo "❌ quotes.txt missing" && exit 1
-
-# Font Fallback
-if [ ! -f "$FONT" ]; then
-    if [ -f "/Library/Fonts/Arial Unicode.ttf" ]; then
-        FONT="/Library/Fonts/Arial Unicode.ttf"
-    else
-        FONT="/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf"
-    fi
-fi
+[ ! -f "$LOGO_PATH" ] && echo "❌ Assets missing" && exit 1
 
 # Pick assets
 FILES=($(find "$INPUT_DIR" -maxdepth 1 -type f \( -iname "*.mp4" -o -iname "*.mov" \) | shuf -n 10))
 AUDIO_FILE=$(find "$AUDIO_DIR" -maxdepth 1 -type f -iname "*.mp3" | shuf -n 1)
 
-if [ ${#FILES[@]} -eq 0 ]; then echo "❌ No videos found in $INPUT_DIR"; exit 1; fi
-
-# --- 2. MERGE CLIPS ---
+# --- 2. MERGE & PROCESS ---
 echo "🎬 Step 1: Processing Clips..."
 i=1
 for f in "${FILES[@]}"; do
@@ -47,33 +33,23 @@ MERGED_RAW="$TMP/merged_raw.mp4"
 ffmpeg -f concat -safe 0 -i "$TMP/list.txt" -c copy "$MERGED_RAW" -y -loglevel error
 DUR=$(ffprobe -v error -show_entries format=duration -of csv=p=0 "$MERGED_RAW")
 
-# --- 3. APPLY LOGO & QUOTE ---
+# --- 3. APPLY VISUALS & QUOTE ---
 echo "🎨 Step 2: Applying Visuals..."
 TOTAL=$(wc -l < "$QUOTES_FILE" | xargs)
 line=$((RANDOM % TOTAL + 1))
 raw=$(sed -n "${line}p" "$QUOTES_FILE" | perl -pe 's/[^[:ascii:]]//g; s/[\x00-\x1f\x7f]//g' | xargs)
 echo "$raw" | fold -s -w 45 > "$TMP/quote.txt"
 
-logo_start=$(echo "$DUR" | awk '{print $1 / 2}')
-logo_fade=$(echo "$DUR" | awk '{print $1 - 1.2}')
-
-FILTER="[1:v]loop=-1:1:0,scale=180:-1,format=rgba,fade=t=in:st=${logo_start}:d=0.5:alpha=1,fade=t=out:st=${logo_fade}:d=0.5:alpha=1[logo_p]; \
-[0:v][logo_p]overlay=x=(W-w)/2:y=H-h-120:shortest=1[v_l]; \
-[v_l]drawtext=fontfile='${FONT}':textfile='$TMP/quote.txt':fontcolor=white:fontsize=35: \
-box=1:boxcolor=black@0.7:boxborderw=20:line_spacing=15:x=(w-text_w)/2:y=(h*0.15):expansion=none[v_f]"
-
 VISUAL_MASTER="$TMP/visual_master.mp4"
-ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "$FILTER" \
-    -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -tune stillimage -pix_fmt yuv420p -an "$VISUAL_MASTER" -y -loglevel warning
+ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "[1:v]scale=180:-1[logo];[0:v][logo]overlay=x=(W-w)/2:y=H-h-120[v];[v]drawtext=fontfile='${FONT}':textfile='$TMP/quote.txt':fontcolor=white:fontsize=35:box=1:boxcolor=black@0.7:x=(w-text_w)/2:y=(h*0.15)[v_f]" \
+    -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -an "$VISUAL_MASTER" -y -loglevel warning
 
 # --- 4. FINAL EXPORT ---
 echo "🎵 Step 3: Finalizing Video..."
 safe_name=$(echo "$raw" | tr -cd '[:alnum:] ' | cut -c1-100 | xargs)
 url_filename="${safe_name// /_}.mp4"
-# We define the final path clearly
 out_file="$OUTPUT_DIR/$url_filename"
 
-# Run FFmpeg - this creates the file directly in the output folder
 ffmpeg -i "$VISUAL_MASTER" -i "$AUDIO_FILE" -c:v copy -c:a aac -shortest "$out_file" -y -loglevel warning
 
 # --- 5. GITHUB UPLOAD (FORCE PUSH TO SAVE SPACE) ---
@@ -84,23 +60,22 @@ if [ -f "$out_file" ]; then
     git config --global user.name "github-actions[bot]"
     git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
-    # 🧹 CLEANUP: Remove any OTHER mp4 files in that folder so only the NEW one remains
+    # Detect branch
+    CURRENT_BRANCH=$(git rev-parse --abbrev-ref HEAD)
+    echo "🌿 Detected branch: $CURRENT_BRANCH"
+
+    # Cleanup old videos in output folder
     find "$OUTPUT_DIR" -type f ! -name "$url_filename" -delete
     
-    # Update Git tracking
-    git add "$OUTPUT_DIR"
-    # This removes deleted files from the git index
-    git rm -r --cached "$OUTPUT_DIR"/* 2>/dev/null || true
+    git add .
     git add "$out_file"
 
-    BRANCH="beta"
-    RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${BRANCH}/output/${url_filename}"
+    RAW_URL="https://raw.githubusercontent.com/${GITHUB_REPOSITORY}/${CURRENT_BRANCH}/output/${url_filename}"
 
     if [ -n "$GITHUB_ACTIONS" ]; then
-        echo "⚙️ Force pushing to keep repo size small..."
-        # We use --amend to keep the commit history from growing
-        git commit --amend -m "Refresh Reel: $safe_name" || git commit -m "Refresh Reel: $safe_name"
-        git push origin "$BRANCH" --force
+        echo "⚙️ Force pushing to $CURRENT_BRANCH..."
+        git commit -m "Refresh Reel: $safe_name" || git commit --amend --no-edit
+        git push origin "$CURRENT_BRANCH" --force
     fi
 
     # --- 6. WEBHOOK CALL ---
@@ -114,7 +89,7 @@ if [ -f "$out_file" ]; then
 EOF
 )
         curl -L -X POST -H "Content-Type: application/json" -d "$PAYLOAD" "$WEBHOOK_URL"
-        echo -e "\n✨ Done!"
+        echo -e "\n✨ Process Complete."
     fi
     echo "-----------------------------------------------"
 else
