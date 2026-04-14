@@ -40,8 +40,21 @@ line=$((RANDOM % TOTAL + 1))
 raw=$(sed -n "${line}p" "$QUOTES_FILE" | perl -pe 's/[^[:ascii:]]//g; s/[\x00-\x1f\x7f]//g' | xargs)
 echo "$raw" | fold -s -w 45 > "$TMP/quote.txt"
 
+# Fade Logic: Logo starts appearing halfway through, fades out 1.2s before end
+logo_start=$(echo "$DUR" | awk '{print $1 / 2}')
+logo_fade_out=$(echo "$DUR" | awk '{print $1 - 1.2}')
+
+# The Filter: 
+# 1. Scale logo 
+# 2. Fade in starting at logo_start for 0.5s 
+# 3. Fade out starting at logo_fade_out for 0.5s
+FILTER="[1:v]scale=180:-1,format=rgba,fade=t=in:st=${logo_start}:d=0.5:alpha=1,fade=t=out:st=${logo_fade_out}:d=0.5:alpha=1[logo_p]; \
+[0:v][logo_p]overlay=x=(W-w)/2:y=H-h-120:shortest=1[v_l]; \
+[v_l]drawtext=fontfile='${FONT}':textfile='$TMP/quote.txt':fontcolor=white:fontsize=35: \
+box=1:boxcolor=black@0.7:boxborderw=20:line_spacing=15:x=(w-text_w)/2:y=(h*0.15):expansion=none[v_f]"
+
 VISUAL_MASTER="$TMP/visual_master.mp4"
-ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "[1:v]scale=180:-1[logo];[0:v][logo]overlay=x=(W-w)/2:y=H-h-120[v];[v]drawtext=fontfile='${FONT}':textfile='$TMP/quote.txt':fontcolor=white:fontsize=35:box=1:boxcolor=black@0.7:x=(w-text_w)/2:y=(h*0.15)[v_f]" \
+ffmpeg -i "$MERGED_RAW" -i "$LOGO_PATH" -filter_complex "$FILTER" \
     -map "[v_f]" -c:v libx264 -preset veryslow -crf 24 -an "$VISUAL_MASTER" -y -loglevel warning
 
 # --- 4. FINAL EXPORT ---
