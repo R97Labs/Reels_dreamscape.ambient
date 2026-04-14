@@ -102,7 +102,7 @@ if [ -f "$out_file" ]; then
     git add "$out_file"
 
     # 3. Construct the Direct Link with the Actual Token
-    BRANCH="main"
+    BRANCH="beta"
     # Note: Use GITHUB_TOKEN or your custom GH_TOKEN secret
     TOKEN_TO_USE="${GH_TOKEN:-$GITHUB_TOKEN}"
     
