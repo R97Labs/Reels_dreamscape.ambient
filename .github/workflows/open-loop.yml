@@ -1,0 +1,47 @@
+name: Render Open Loop Reel
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: '30 9 * * *'
+    - cron: '30 10 * * *'
+    - cron: '30 11 * * *'
+    - cron: '30 12 * * *'
+    - cron: '30 13 * * *'
+    - cron: '30 14 * * *'
+    - cron: '30 15 * * *'
+    - cron: '30 16 * * *'
+    - cron: '30 17 * * *'
+    - cron: '30 18 * * *'
+    - cron: '30 19 * * *'
+    - cron: '30 20 * * *'
+    - cron: '30 21 * * *'
+    - cron: '30 21 * * *'
+
+   
+
+permissions:
+  contents: write
+
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Install ffmpeg
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg
+
+      - name: Run Open Loop Generator
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          WEBHOOK_URL: ${{ secrets.WEBHOOK_URL }}
+          SHEETDB_URL: ${{ secrets.SHEETDB_URL }}
+        run: |
+          chmod +x Open-Loop.sh
+          ./Open-Loop.sh
